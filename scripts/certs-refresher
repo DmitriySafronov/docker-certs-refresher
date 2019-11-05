@@ -1,0 +1,73 @@
+#!/bin/sh
+
+CERTS_DIR=/run/ssl-tmp
+
+LOGGER="echo"
+
+die() {
+    ${LOGGER} "$1"
+    exit 1
+}
+
+########################
+
+if [[ -z "$1" ]]; then
+    die "No config prefix specified! Exiting..."
+fi
+CONFIG_PREFIX="$1"
+SCRIPT_SECRET=${CONFIG_PREFIX}secret
+SCRIPT_CONFIG=${CONFIG_PREFIX}config
+
+########################
+
+if [[ -z "$2" ]]; then
+    die "No secret prefix specified! Exiting..."
+fi
+SECRET_PREFIX="$2"
+
+########################
+
+if [[ ! -f "${SCRIPT_SECRET}" ]]; then
+    die "No secret file [${SCRIPT_SECRET}] found!.."
+fi
+if [[ ! -f "${SCRIPT_CONFIG}" ]]; then
+    die "No config file [${SCRIPT_CONFIG}] found!.."
+fi
+source "${SCRIPT_CONFIG}"
+
+########################
+
+if [[ -z "${REMOTE_SERVER}" ]]; then
+    die "REMOTE_SERVER is not specified in config file!"
+fi
+if [[ -z "${REMOTE_USER}" ]]; then
+    die "REMOTE_USER is not specified in config file!"
+fi
+if [[ -z "${REMOTE_DIR}" ]]; then
+    die "REMOTE_DIR is not specified in config file!"
+fi
+
+########################
+
+cert_replace() {
+    cp -fv "$1" "$2"
+}
+
+check_replace_certs() {
+    local CERT_NEW="$1"
+    local CERT_OLD="$2"
+    if [[ ! -f ${CERT_OLD} || -n "$(diff -q ${CERT_OLD} ${CERT_NEW})" ]]; then
+        cert_replace "${CERT_NEW}" "${CERT_OLD}" || die "Can't update cert [${CERT_OLD}] to [${CERT_NEW}]"
+    fi
+}
+
+########################
+
+rsync -aL --password-file="${SCRIPT_SECRET}" "${REMOTE_USER}"@"${REMOTE_SERVER}"::"${REMOTE_DIR}/" "${CERTS_DIR}/" || die "Can't rsync certs"
+
+########################
+
+check_replace_certs "${CERTS_DIR}/chain.pem"        "${SECRET_PREFIX}chain.pem"
+check_replace_certs "${CERTS_DIR}/fullchain.pem"    "${SECRET_PREFIX}fullchain.pem"
+check_replace_certs "${CERTS_DIR}/cert.pem"         "${SECRET_PREFIX}cert.pem"
+check_replace_certs "${CERTS_DIR}/privkey.pem"      "${SECRET_PREFIX}privkey.pem"
